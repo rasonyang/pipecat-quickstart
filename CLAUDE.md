@@ -28,9 +28,9 @@ This is a Pipecat quickstart project for building voice AI bots. The application
 **Technology Stack:**
 - Python 3.12+ with `uv` package manager
 - Pipecat AI framework for voice bot pipelines
-- Deepgram (Speech-to-Text)
-- OpenAI (LLM inference)
-- Cartesia (Text-to-Speech)
+- Tencent Cloud (Speech-to-Text)
+- Zhipu AI (LLM inference) - glm-4.5-airx model
+- Cartesia/MiniMax (Text-to-Speech)
 - Daily/WebRTC/SIP for transport
 
 ## Development Commands
@@ -43,7 +43,7 @@ uv sync
 
 # Configure environment variables
 cp env.example .env
-# Edit .env with your API keys (DEEPGRAM_API_KEY, OPENAI_API_KEY, CARTESIA_API_KEY)
+# Edit .env with your API keys (TENCENT_SECRET_ID, TENCENT_SECRET_KEY, TENCENT_APPID, ZHIPUAI_API_KEY, CARTESIA_API_KEY, MINIMAX_API_KEY, MINIMAX_GROUP_ID)
 ```
 
 ### Running Locally

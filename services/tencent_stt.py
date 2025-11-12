@@ -65,6 +65,7 @@ class TencentSTTService(STTService):
         vad_silence_time: int = 1000,  # VAD silence timeout in ms
         audio_passthrough: bool = False,  # Prevent audio echo by default
         disable_proxy: bool = True,  # Disable proxy for direct connections by default
+        lazy_connect: bool = False,  # Delay connection until explicitly called
         **kwargs,
     ):
         """Initialize the Tencent STT service.
@@ -84,6 +85,7 @@ class TencentSTTService(STTService):
             vad_silence_time: VAD silence timeout in milliseconds.
             audio_passthrough: Whether to pass audio frames downstream (default False to prevent echo).
             disable_proxy: Disable proxy for direct connections (default True).
+            lazy_connect: Delay WebSocket connection until explicitly called (default False).
             **kwargs: Additional arguments passed to the parent STTService.
         """
         # Infer sample rate from engine model type if not provided
@@ -109,6 +111,7 @@ class TencentSTTService(STTService):
         self._word_info = word_info
         self._vad_silence_time = vad_silence_time
         self._disable_proxy = disable_proxy
+        self._lazy_connect = lazy_connect
 
         self._connection = None
         self._receive_task = None
@@ -133,8 +136,8 @@ class TencentSTTService(STTService):
         await super().set_model(model)
         logger.info(f"Switching STT model to: [{model}]")
         self._engine_model_type = model
-        await self._disconnect()
-        await self._connect()
+        await self.disconnect()
+        await self.connect()
 
     async def set_language(self, language: Language):
         """Set the recognition language and reconnect.
@@ -151,8 +154,8 @@ class TencentSTTService(STTService):
         }
         if language in language_to_model:
             self._engine_model_type = language_to_model[language]
-            await self._disconnect()
-            await self._connect()
+            await self.disconnect()
+            await self.connect()
         else:
             logger.warning(f"Language {language} not directly supported, keeping current model")
 
@@ -163,7 +166,9 @@ class TencentSTTService(STTService):
             frame: The start frame containing initialization parameters.
         """
         await super().start(frame)
-        await self._connect()
+        # Only auto-connect if lazy_connect is False
+        if not self._lazy_connect:
+            await self.connect()
 
     async def stop(self, frame: EndFrame):
         """Stop the Tencent STT service.
@@ -172,7 +177,7 @@ class TencentSTTService(STTService):
             frame: The end frame.
         """
         await super().stop(frame)
-        await self._disconnect()
+        await self.disconnect()
 
     async def cancel(self, frame: CancelFrame):
         """Cancel the Tencent STT service.
@@ -181,7 +186,7 @@ class TencentSTTService(STTService):
             frame: The cancel frame.
         """
         await super().cancel(frame)
-        await self._disconnect()
+        await self.disconnect()
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """Send audio data to Tencent for transcription.
@@ -271,8 +276,11 @@ class TencentSTTService(STTService):
 
         return params
 
-    async def _connect(self):
-        """Establish WebSocket connection to Tencent ASR service."""
+    async def connect(self):
+        """Establish WebSocket connection to Tencent ASR service.
+
+        This method can be called manually to establish connection when lazy_connect is True.
+        """
         logger.debug("Connecting to Tencent ASR")
 
         params = self._build_connection_params()
@@ -293,8 +301,11 @@ class TencentSTTService(STTService):
             logger.error(f"{self}: Connection URL (truncated): wss://asr.cloud.tencent.com/asr/v2/{self._appid}?...")
             await self.push_error(ErrorFrame(f"Failed to connect: {e}"))
 
-    async def _disconnect(self):
-        """Disconnect from Tencent ASR service."""
+    async def disconnect(self):
+        """Disconnect from Tencent ASR service.
+
+        This method can be called manually to close connection when needed.
+        """
         if self._receive_task:
             self._receive_task.cancel()
             try:

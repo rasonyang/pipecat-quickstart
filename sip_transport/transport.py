@@ -281,9 +281,8 @@ class RTPSession:
                 drift = current_time - next_send_time
                 if drift > 0.1:
                     logger.warning(f"RTP send timing drift detected: {drift*1000:.1f}ms behind, resetting timer")
-                    # Don't skip ahead, just reset to avoid further drift
+                    # Reset timer but continue sending to avoid packet loss
                     next_send_time = current_time + interval
-                    continue
 
                 # Get audio or send silence
                 try:
@@ -911,6 +910,9 @@ class SIPOutputProcessor(FrameProcessor):
             UserStartedSpeakingFrame,
             TranscriptionFrame
         )
+
+        # DEBUG: Log ALL frames received by SIPOutputProcessor
+        logger.debug(f"📦 SIPOutput received: {frame.__class__.__name__}, direction={direction}")
 
         await super().process_frame(frame, direction)
 

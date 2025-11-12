@@ -11,7 +11,7 @@ browser and speak with it. You can also deploy this bot to Pipecat Cloud.
 
 Required AI services:
 - Tencent Cloud (Speech-to-Text)
-- OpenAI (LLM)
+- Zhipu AI (LLM)
 - Cartesia (Text-to-Speech)
 
 Run the bot using::
@@ -49,7 +49,7 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIPro
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
 from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.openai.llm import OpenAILLMService
+from services.glm_llm import GLMLLMService
 from services.tencent_stt import TencentSTTService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
@@ -69,6 +69,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         engine_model_type="8k_zh",  # 8kHz Mandarin for telephony
         filter_dirty=1,  # Enable profanity filtering
         audio_passthrough=False,  # Prevent audio echo
+        lazy_connect=True,  # Connect on SIP call, not on pipeline start
     )
 
     tts = CartesiaTTSService(
@@ -76,7 +77,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
     )
 
-    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
+    llm = GLMLLMService(
+        api_key=os.getenv("ZHIPUAI_API_KEY"),
+        model="glm-4-flashx",
+    )
 
     messages = [
         {
@@ -114,14 +118,25 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
-        logger.info(f"Client connected")
+        logger.info(f"📞 SIP call connected: {client}")
+
+        # Connect STT when SIP call is established
+        await stt.connect()
+        logger.info("✅ Tencent STT connected")
+
         # Kick off the conversation.
-        messages.append({"role": "system", "content": "Say hello and briefly introduce yourself."})
+        messages.append({"role": "user", "content": "Please say hello and briefly introduce yourself."})
         await task.queue_frames([LLMRunFrame()])
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
-        logger.info(f"Client disconnected")
+        logger.info(f"📴 SIP call disconnected: {client}")
+
+        # Disconnect STT when SIP call ends
+        await stt.disconnect()
+        logger.info("✅ Tencent STT disconnected")
+
+        # Cancel task
         await task.cancel()
 
     runner = PipelineRunner(handle_sigint=runner_args.handle_sigint)

@@ -10,7 +10,7 @@ The example runs a simple voice AI bot that you can connect to using SIP.
 
 Required AI services:
 - Tencent Cloud (Speech-to-Text)
-- OpenAI (LLM)
+- Zhipu AI (LLM)
 - MiniMax (Text-to-Speech)
 
 Run the bot using::
@@ -40,12 +40,17 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 
 logger.info("Loading pipeline components...")
 
-# Enable more detailed logging for Tencent and MiniMax
+# Configure logging levels
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)  # Set global level to INFO
+
+# Enable DEBUG for specific services if needed
 logging.getLogger("pipecat.services.minimax").setLevel(logging.DEBUG)
-logging.getLogger("httpx").setLevel(logging.DEBUG)
-logging.getLogger("httpcore").setLevel(logging.DEBUG)
+
+# Reduce noise from third-party libraries
+logging.getLogger("httpx").setLevel(logging.INFO)
+logging.getLogger("httpcore").setLevel(logging.INFO)
+logging.getLogger("websockets.client").setLevel(logging.WARNING)  # Silence BINARY messages
 
 from pipecat.frames.frames import LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -55,8 +60,8 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.runner.types import RunnerArguments
 from pipecat.services.minimax.tts import Language, MiniMaxHttpTTSService
-from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport
+from services.glm_llm import GLMLLMService
 from services.tencent_stt import TencentSTTService
 
 from sip_transport import SIPParams, SIPTransport
@@ -94,20 +99,25 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             sample_rate=8000,
             filter_dirty=1,  # Enable profanity filtering
             audio_passthrough=False,  # Prevent audio echo
+            vad_silence_time=800,  # Optimize VAD timeout (default 1000ms)
         )
 
-        # MiniMax TTS for SIP (8kHz sample rate)
+        # MiniMax TTS for SIP (8kHz sample rate, Chinese language)
         tts = MiniMaxHttpTTSService(
             api_key=minimax_api_key,
             group_id=minimax_group_id,
             aiohttp_session=session,
             base_url="https://api.minimaxi.com/v1/t2a_v2",  # Correct official endpoint
             sample_rate=8000,
-            params=MiniMaxHttpTTSService.InputParams(language=Language.EN),
+            model="speech-2.6-turbo",  # 使用最新的 MiniMax 模型
+            params=MiniMaxHttpTTSService.InputParams(language=Language.ZH_CN),
         )
         logger.info(f"✅ MiniMax TTS initialized with base_url=https://api.minimaxi.com/v1/t2a_v2")
 
-        llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
+        llm = GLMLLMService(
+            api_key=os.getenv("ZHIPUAI_API_KEY"),
+            model="glm-4-flashx",
+        )
 
         messages = [
             {
@@ -147,7 +157,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         async def on_client_connected(transport, client):
             logger.info(f"SIP call connected from {client}")
             # Kick off the conversation.
-            messages.append({"role": "system", "content": "Say hello and briefly introduce yourself."})
+            messages.append({"role": "user", "content": "Please say hello and briefly introduce yourself."})
             await task.queue_frames([LLMRunFrame()])
 
         @transport.event_handler("on_client_disconnected")
@@ -170,7 +180,7 @@ async def bot(runner_args: RunnerArguments):
         rtp_port_end=int(os.getenv("SIP_RTP_PORT_RANGE", "10000-15000").split("-")[1]),
         audio_in_enabled=True,
         audio_out_enabled=True,
-        vad_analyzer=SileroVADAnalyzer(sample_rate=8000, params=VADParams(stop_secs=0.2)),
+        vad_analyzer=SileroVADAnalyzer(sample_rate=8000, params=VADParams(stop_secs=0.15)),
         turn_analyzer=LocalSmartTurnAnalyzerV3(),
     )
 
