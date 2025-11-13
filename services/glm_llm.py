@@ -199,6 +199,7 @@ class GLMLLMService(LLMService):
 
             # Stream chat completions
             chunk_num = 0
+            total_chars = 0  # Track total characters for final summary
             async for chunk in self._stream_chat_completions(context):
                 chunk_num += 1
 
@@ -215,8 +216,8 @@ class GLMLLMService(LLMService):
                 # Handle text content (streaming deltas)
                 if choice.delta and choice.delta.content:
                     text = choice.delta.content
+                    total_chars += len(text)
                     await self.push_frame(LLMTextFrame(text))
-                    logger.debug(f"Streamed text chunk: {len(text)} chars")
 
                 # Handle function/tool calls
                 if choice.delta and choice.delta.tool_calls:
@@ -260,7 +261,9 @@ class GLMLLMService(LLMService):
                 logger.info(f"Executing {len(function_calls)} function call(s)")
                 await self.run_function_calls(function_calls)
 
-            logger.debug(f"Streaming complete: {chunk_num} chunks processed")
+            # Final summary instead of per-chunk logging
+            if total_chars > 0:
+                logger.info(f"LLM response complete: {chunk_num} chunks, {total_chars} chars total")
 
         except asyncio.CancelledError:
             logger.warning("LLM request cancelled")

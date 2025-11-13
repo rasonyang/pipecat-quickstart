@@ -28,10 +28,15 @@ This is a Pipecat quickstart project for building voice AI bots. The application
 **Technology Stack:**
 - Python 3.12+ with `uv` package manager
 - Pipecat AI framework for voice bot pipelines
-- Tencent Cloud (Speech-to-Text)
-- Zhipu AI (LLM inference) - glm-4.5-airx model
+- Tencent Cloud (Speech-to-Text) - custom service in `services/tencent_stt.py`
+- Zhipu AI (LLM inference) - custom service in `services/glm_llm.py` (glm-4-flashx model)
 - Cartesia/MiniMax (Text-to-Speech)
 - Daily/WebRTC/SIP for transport
+
+**Important Files:**
+- `bot.py`: Main bot implementation supporting both WebRTC/Daily and SIP transports
+- `main.py`: Alternative SIP-specific implementation with MiniMax TTS
+- `services/`: Custom service implementations for Chinese AI providers (Tencent STT, Zhipu GLM)
 
 ## Development Commands
 
@@ -48,6 +53,12 @@ cp env.example .env
 
 ### Running Locally
 
+The project has two main entry points:
+
+**`bot.py` (Recommended):** Unified implementation supporting both WebRTC/Daily and SIP transports via command-line flag. Uses Cartesia TTS.
+
+**`main.py` (Alternative):** SIP-specific implementation with MiniMax TTS and enhanced logging configuration.
+
 #### WebRTC Transport (Default)
 
 ```bash
@@ -60,8 +71,11 @@ First run may take ~20 seconds to download models. Open http://localhost:7860 in
 #### SIP Transport (Telephony)
 
 ```bash
-# Run with SIP transport for incoming telephone calls
+# Using bot.py (Cartesia TTS)
 uv run bot.py --transport sip
+
+# Using main.py (MiniMax TTS)
+uv run main.py
 ```
 
 Requires SIP configuration in `.env`:
@@ -89,6 +103,22 @@ uv run ruff check
 
 # Auto-fix linting issues
 uv run ruff check --fix
+```
+
+### Testing and Debugging
+
+```bash
+# Test MiniMax TTS directly
+uv run test_minimax_tts.py
+
+# Test UDP connectivity (for SIP transport debugging)
+./test_udp.py
+
+# Kill all running bot processes
+./kill_bot.sh
+
+# Run SIP bot with debug logging
+./run_sip_debug.sh
 ```
 
 ### Deployment to Pipecat Cloud
@@ -143,4 +173,55 @@ User Input → sip transport → STT (Speech-to-Text) → LLM Context Aggregator
 - `pyproject.toml`: Python dependencies managed by `uv`
 - `pcc-deploy.toml`: Pipecat Cloud deployment configuration (agent name, Docker image, secrets, scaling)
 - `.env`: API keys for AI services (not committed to git)
+- `env.example`: Template for required environment variables
 - `Dockerfile`: Multi-stage build using `dailyco/pipecat-base` image
+
+## Custom Services
+
+The project includes custom service implementations for Chinese AI providers located in the `services/` directory:
+
+### Tencent STT Service (`services/tencent_stt.py`)
+
+Custom Speech-to-Text implementation using Tencent Cloud ASR WebSocket API.
+
+**Key features:**
+- Real-time streaming recognition via WebSocket
+- Support for 8kHz (telephony) and 16kHz (general) audio
+- Configurable VAD, profanity filtering, and hotword boosting
+- Lazy connection mode for SIP transport (connect only when call is established)
+- Audio passthrough disabled by default to prevent echo
+
+**Configuration parameters:**
+- `engine_model_type`: Recognition engine ("8k_zh" for telephony, "16k_zh" for general)
+- `sample_rate`: Auto-inferred from model type (8000 or 16000 Hz)
+- `filter_dirty`: Profanity filtering (0=off, 1=filter, 2=only_filter)
+- `lazy_connect`: Delay connection until `await stt.connect()` is called (useful for SIP)
+- `audio_passthrough`: Pass audio downstream (False prevents echo in SIP)
+
+### GLM LLM Service (`services/glm_llm.py`)
+
+Custom LLM implementation for Zhipu AI's GLM models using OpenAI-compatible API.
+
+**Key features:**
+- Streaming chat completions
+- HTTP proxy bypass (`disable_proxy=True` by default for Chinese networks)
+- OpenAI adapter for function calling support
+- Token usage metrics
+
+**Configuration parameters:**
+- `model`: GLM model name (default: "glm-4-flashx")
+- `base_url`: API endpoint (default: Zhipu AI endpoint)
+- `disable_proxy`: Bypass HTTP proxy from environment (True recommended for direct connections)
+
+## Network Configuration
+
+**For Chinese AI Services (Tencent, Zhipu, MiniMax):**
+- Set `disable_proxy=True` in service initialization to bypass HTTP proxies
+- Tencent STT uses WebSocket (wss://asr.cloud.tencent.com)
+- Zhipu GLM uses HTTPS (https://open.bigmodel.cn)
+- Direct connections are recommended for lower latency
+
+**For SIP Transport:**
+- Ensure UDP ports are open (6060 for SIP signaling, 10000-15000 for RTP audio)
+- Configure firewall rules for incoming SIP traffic
+- Test UDP connectivity with `./test_udp.py`

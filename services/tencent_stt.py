@@ -63,6 +63,7 @@ class TencentSTTService(STTService):
         filter_punc: int = 0,  # 0=off, 1=filter punctuation
         word_info: int = 0,  # 0=no word timestamps, 1=include word timestamps
         vad_silence_time: int = 1000,  # VAD silence timeout in ms
+        noise_threshold: Optional[float] = None,  # Noise suppression threshold (-1.0 to 1.0, recommended: 0.2)
         audio_passthrough: bool = False,  # Prevent audio echo by default
         disable_proxy: bool = True,  # Disable proxy for direct connections by default
         lazy_connect: bool = False,  # Delay connection until explicitly called
@@ -83,6 +84,7 @@ class TencentSTTService(STTService):
             filter_punc: Punctuation filtering (0=off, 1=on).
             word_info: Include word-level timestamps (0=no, 1=yes).
             vad_silence_time: VAD silence timeout in milliseconds.
+            noise_threshold: Noise suppression threshold (-1.0 to 1.0, recommended: 0.2). Higher values = more aggressive filtering.
             audio_passthrough: Whether to pass audio frames downstream (default False to prevent echo).
             disable_proxy: Disable proxy for direct connections (default True).
             lazy_connect: Delay WebSocket connection until explicitly called (default False).
@@ -110,6 +112,7 @@ class TencentSTTService(STTService):
         self._filter_punc = filter_punc
         self._word_info = word_info
         self._vad_silence_time = vad_silence_time
+        self._noise_threshold = noise_threshold
         self._disable_proxy = disable_proxy
         self._lazy_connect = lazy_connect
 
@@ -254,8 +257,8 @@ class TencentSTTService(STTService):
             "engine_model_type": self._engine_model_type,
             "voice_id": self._voice_id,
             "voice_format": str(self._voice_format),
-            "needvad": "1",  # Enable VAD
-            "vad_silence_time": str(self._vad_silence_time),
+            "needvad": "1",  # Re-enable server-side VAD for reliable transcription
+            "vad_silence_time": "400",  # Reduced from 800ms to 400ms to lower latency
         }
 
         # Add optional parameters
@@ -269,6 +272,8 @@ class TencentSTTService(STTService):
             params["filter_punc"] = str(self._filter_punc)
         if self._word_info:
             params["word_info"] = str(self._word_info)
+        if self._noise_threshold is not None:
+            params["noise_threshold"] = str(self._noise_threshold)
 
         # Generate signature
         signature = self._generate_signature(params)
