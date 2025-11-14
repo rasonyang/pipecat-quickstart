@@ -4,7 +4,7 @@
 export PYTHONDONTWRITEBYTECODE=1
 
 # Enable detailed logging
-export LOGURU_LEVEL=DEBUG
+export LOGURU_LEVEL=INFO
 
 echo "🚀 Starting SIP bot with detailed logging..."
 echo "📝 Logs will be saved to: sip_bot.log"

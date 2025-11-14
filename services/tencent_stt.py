@@ -258,7 +258,7 @@ class TencentSTTService(STTService):
             "voice_id": self._voice_id,
             "voice_format": str(self._voice_format),
             "needvad": "1",  # Re-enable server-side VAD for reliable transcription
-            "vad_silence_time": "400",  # Reduced from 800ms to 400ms to lower latency
+            "vad_silence_time": str(self._vad_silence_time),  # Use configured value from __init__
         }
 
         # Add optional parameters

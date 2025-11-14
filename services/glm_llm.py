@@ -16,6 +16,7 @@ API Reference: https://docs.bigmodel.cn/api-reference/模型-api/对话补全
 """
 
 import asyncio
+import time
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
@@ -186,6 +187,15 @@ class GLMLLMService(LLMService):
             context: LLM context to process.
         """
         try:
+            # Log LLM input (last user message)
+            messages = context.messages
+            user_msg = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+            if user_msg:
+                logger.info(f"💭 LLM Input: {user_msg.get('content', '')}")
+
+            # Record start time
+            llm_start_time = time.time()
+
             # Signal start of LLM response
             await self.push_frame(LLMFullResponseStartFrame())
             await self.start_processing_metrics()
@@ -200,6 +210,7 @@ class GLMLLMService(LLMService):
             # Stream chat completions
             chunk_num = 0
             total_chars = 0  # Track total characters for final summary
+            full_response = ""  # Track full response content
             async for chunk in self._stream_chat_completions(context):
                 chunk_num += 1
 
@@ -217,6 +228,7 @@ class GLMLLMService(LLMService):
                 if choice.delta and choice.delta.content:
                     text = choice.delta.content
                     total_chars += len(text)
+                    full_response += text
                     await self.push_frame(LLMTextFrame(text))
 
                 # Handle function/tool calls
@@ -261,9 +273,11 @@ class GLMLLMService(LLMService):
                 logger.info(f"Executing {len(function_calls)} function call(s)")
                 await self.run_function_calls(function_calls)
 
-            # Final summary instead of per-chunk logging
+            # Log complete response with timing
             if total_chars > 0:
-                logger.info(f"LLM response complete: {chunk_num} chunks, {total_chars} chars total")
+                duration_ms = int((time.time() - llm_start_time) * 1000)
+                logger.info(f"💬 LLM Response: {full_response} (⏱️ {duration_ms}ms)")
+                logger.debug(f"LLM stats: {chunk_num} chunks, {total_chars} chars")
 
         except asyncio.CancelledError:
             logger.warning("LLM request cancelled")

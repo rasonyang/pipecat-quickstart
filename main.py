@@ -62,12 +62,12 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.runner.types import RunnerArguments
-from pipecat.services.minimax.tts import MiniMaxHttpTTSService
 from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import BaseTransport
 
 from services.glm_llm import GLMLLMService
-from services.tencent_stt import TencentSTTService
+from services.minimax_tts_logging import MiniMaxTTSWithLogging
+from services.tencent_segmented_stt import TencentSegmentedSTTService
 from sip_transport import SIPParams, SIPTransport
 
 logger.info("✅ All components loaded successfully!")
@@ -154,33 +154,31 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info(f"[{session_id[:8]}] Creating pipeline for session")
 
         # Create independent service instances for this session
-        stt = TencentSTTService(
+        stt = TencentSegmentedSTTService(
             secret_id=os.getenv("TENCENT_SECRET_ID") or "",
             secret_key=os.getenv("TENCENT_SECRET_KEY") or "",
             appid=os.getenv("TENCENT_APPID") or "",
             engine_model_type="8k_zh",  # 8kHz Mandarin for telephony
             sample_rate=8000,
             filter_dirty=1,  # Enable profanity filtering
-            audio_passthrough=False,  # Prevent audio echo
-            vad_silence_time=800,  # Optimize VAD timeout (default 1000ms)
-            noise_threshold=0.2,  # Server-side noise suppression
-            lazy_connect=False,  # Connect immediately for this session
+            noise_threshold=0.2,  # Server-side noise reduction
+            audio_passthrough=False,  # Disable audio passthrough for SIP
         )
 
         # MiniMax TTS for SIP (8kHz sample rate, Chinese language)
-        tts = MiniMaxHttpTTSService(
+        tts = MiniMaxTTSWithLogging(
             api_key=minimax_api_key,
             group_id=minimax_group_id,
             aiohttp_session=aiohttp_session,  # Share session across all instances
             base_url="https://api.minimaxi.com/v1/t2a_v2",
             sample_rate=8000,
             model="speech-2.6-turbo",
-            params=MiniMaxHttpTTSService.InputParams(language=Language.ZH_CN),
+            params=MiniMaxTTSWithLogging.InputParams(language=Language.ZH_CN),
         )
 
         llm = GLMLLMService(
             api_key=os.getenv("ZHIPUAI_API_KEY") or "",
-            model="glm-4-airx",
+            model="glm-4-flashx-250414",
         )
 
         # Independent LLM context for this session
@@ -283,7 +281,7 @@ async def bot(runner_args: RunnerArguments):
         vad_analyzer=SileroVADAnalyzer(
             sample_rate=8000,
             params=VADParams(
-                stop_secs=0.15,    # Keep existing stop delay
+                stop_secs=0.5,     # Increase to 500ms to allow natural pauses in speech
                 start_secs=0.3,    # Increase from default 0.2 to reduce false positives
                 min_volume=0.7,    # Increase from default 0.6 to require louder speech
             )
